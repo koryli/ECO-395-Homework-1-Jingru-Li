@@ -1,0 +1,318 @@
+---
+output:
+  github_document
+---
+
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r}
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(tidyverse)
+library(stringr)
+library(readr)
+library(expss)
+library(data.table)
+library(rsample)
+library(caret)
+library(modelr)
+library(parallel)
+library(foreach)
+
+```
+
+##Problem 1: ABIA
+We mainly focus on the question: What is the best time of year to fly to minimize delays, and does this change by destination?
+First, we calculate and plot the "Average Arrival delay in Different Month".
+```{r}
+ABIA = read.csv("data/ABIA.csv")
+M1 = ABIA%>%
+  na.omit()%>%
+  group_by(Month) %>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(M1, aes(x = Month, y = delaymean)) + 
+ scale_x_continuous(breaks = seq(1,12,1))+
+ labs(x="Month of 2008",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Month")+
+ geom_col()
+```
+From the plot, we can see that the Arrival delay time of Aguest, September and October is relatively lower than other month (lower than 50 minutes). Aguest is the lowest.
+
+Then what about the different day of 2008? Will there be some trend?
+```{r}
+Q1 = ABIA %>%
+  na.omit()%>%
+  group_by(Month,DayofMonth) %>%
+  summarise(delaymean = mean(ArrDelay))
+Q1$DayofYear <- seq.int(nrow(Q1))
+ggplot(Q1, aes(x = DayofYear, y = delaymean)) + 
+ labs(x="Day of 2008",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day")+
+ geom_col()
+```
+```{r}
+ggplot(Q2, aes(x = DayofMonth, y = delaymean)) + 
+  facet_wrap(~Month)+
+  labs(x="Day of Month",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day/ Month")+
+
+  geom_col()
+```
+There is no visible relationship of the delay time with different day but it seems that it has a seasonality. Let's check it.
+```{r}
+week = ABIA%>%
+  na.omit()%>%
+  group_by(DayOfWeek)%>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(week, aes(x = DayOfWeek, y = delaymean)) + 
+
+ labs(x="Day of a Week",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day of Week")+
+ scale_x_continuous(breaks = seq(1,7,1))+
+ geom_col()
+```
+We can see that Wednesday and Thursday have a relatively low average Arrival delay time.
+
+
+##We can conclude that the best time of year to fly to minimize delays is Aguest, better to fly on Wednesday or Thursday.
+
+##Check for different destination:
+First count for the most frequently appeared destination (besides AUS)
+```{r}
+#frequency of dest
+xa = xtabs(~Dest + Year, data=ABIA)
+
+Freq = as.data.frame.matrix(xa)
+data.frame(Dest = row.names(Freq),Freq,row.names = NULL,stringsAsFactors = FALSE)
+
+freqmax = Freq%>%
+  arrange(desc(`2008`))%>%
+  head
+show(freqmax)
+```
+Then we choose the most frequent three destination(above 5000 times): AUS, DAL and DFW to check
+
+```{r}
+#For AUS
+Q3 = ABIA%>%
+  filter(Dest == "AUS")%>%
+  na.omit()%>%
+  group_by(Month) %>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(Q3, aes(x = Month, y = delaymean)) + 
+ scale_x_continuous(breaks = seq(1,12,1))+
+ labs(x="Month of 2008",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Month")+
+ geom_col()
+```
+For AUS, October has the smallest average Arrival delay time. Different from the overall situation.
+```{r}
+weekaus = ABIA%>%
+  filter(Dest == "AUS")%>%
+  na.omit()%>%
+  group_by(DayOfWeek)%>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(weekaus, aes(x = DayOfWeek, y = delaymean)) + 
+
+ labs(x="Day of a Week",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day of Week")+
+ scale_x_continuous(breaks = seq(1,7,1))+
+ geom_col()
+```
+For AUS, roughly same as the overall situation.
+
+```{r}
+Q4 = ABIA%>%
+  filter(Dest == "DAL")%>%
+  na.omit()%>%
+  group_by(Month) %>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(Q4, aes(x = Month, y = delaymean)) + 
+ scale_x_continuous(breaks = seq(1,12,1))+
+ labs(x="Month of 2008",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Month")+
+ geom_col()
+```
+For DAL, Aguest has the lowest average Arrival delay time, same as the overall situation.
+```{r}
+weekdal = ABIA%>%
+  filter(Dest == "DAL")%>%
+  na.omit()%>%
+  group_by(DayOfWeek)%>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(weekdal, aes(x = DayOfWeek, y = delaymean)) + 
+
+ labs(x="Day of a Week",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day of Week")+
+ scale_x_continuous(breaks = seq(1,7,1))+
+ geom_col()
+```
+For DAL, Monday has the lowest average arrival delay time, different from the overall situation.
+
+```{r}
+Q5 = ABIA%>%
+  filter(Dest == "DFW")%>%
+  na.omit()%>%
+  group_by(Month) %>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(Q5, aes(x = Month, y = delaymean)) + 
+ scale_x_continuous(breaks = seq(1,12,1))+
+ labs(x="Month of 2008",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Month")+
+ geom_col()
+```
+For DFW, October has the smallest average Arrival delay time. Different from the overall situation.
+```{r}
+weekdfw = ABIA%>%
+  filter(Dest == "DFW")%>%
+  na.omit()%>%
+  group_by(DayOfWeek)%>%
+  summarise(delaymean = mean(ArrDelay))
+
+ggplot(weekdfw, aes(x = DayOfWeek, y = delaymean)) + 
+
+ labs(x="Day of a Week",y="Average Arrival Delay Time by Minutes",title="Average Arrival delay in Different Day of Week")+
+ scale_x_continuous(breaks = seq(1,7,1))+
+ geom_col()
+```
+For DFW, Wednesday has the lowest average arrival delay time, roughly same as the overall situation.
+
+##The best time of year/week changes by destination.
+
+
+##Problem 2: Olympic
+A)
+```{r}
+olympics_top20 = read.csv("data/olympics_top20.csv")
+F_height = olympics_top20%>% 
+  na.omit()%>%
+  filter(sex== "F" & sport=="Athletics")%>%
+  group_by (id)
+  quantile(F_height$height, probs = c(0.95))
+```
+B)
+```{r}
+Var_h = olympics_top20%>%
+  filter(sex=="F")%>%
+  group_by (event)%>%
+  summarise(mean_h = mean(height),sd_h = sd(height))%>%
+  arrange(desc(sd_h))%>%
+  head(10)%>%
+  show()
+```
+For single women's event, "Swimming Women's 100 metres Butterfly" had the greatest variability in competitor's heights across the entire history of the Olympics, as measured by the standard deviation.
+
+C)
+```{r}
+swim_age = olympics_top20%>%
+  filter(sport == "Swimming")%>%
+  group_by(year)%>%
+
+  summarise(mean_age = mean(age))
+ggplot(swim_age, aes(x = year, y = mean_age)) + 
+  scale_x_continuous(breaks = seq(1896,2016,8))+
+
+ geom_line()
+```
+The trend
+
+```{r}
+swimage1 = olympics_top20%>%
+  filter(sport == "Swimming")%>%
+  group_by(year,sex)%>%
+  summarise(mean_age1 = mean(age))  
+ggplot(swimage1, aes(x = year, y = mean_age1, color = sex)) + 
+  scale_x_continuous(breaks = seq(1896,2016,8))+
+  geom_line()+
+  labs(title="The Average Age of Women and Men Swimmers",
+       y="average age",
+       x = "year") 
+```
+The
+
+
+Problem 3: sclass
+For trim = 350
+```{r}
+
+sclass = read.csv("data/sclass.csv")
+car_350 = sclass %>%
+  filter(trim == '350')
+summary(car_350)
+# plot the data
+ggplot(data = car_350) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='darkgrey')
+# split
+car_350_split = initial_split(car_350, prop=0.8)
+car_350_train = training(car_350_split)
+car_350_test  = testing(car_350_split)
+k_grid = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300)
+rmse_out = foreach(i=1:20, .combine='rbind') %dopar% {
+  
+  this_rmse = foreach(k = k_grid, .combine='c') %do% {
+
+    knn_model = knnreg(price ~ mileage, data=car_350_train, k = k, use.all=TRUE)
+    modelr::rmse(knn_model, car_350_test)
+  }
+  data.frame(k=k_grid, rmse=this_rmse)
+}
+rmse_out = arrange(rmse_out, k)
+ggplot(rmse_out) + geom_point(aes(x=factor(k), y=rmse)) + theme_bw(base_size=7)
+
+```
+We can see that the bottom is k = 15.
+
+```{r}
+knn = knnreg(price ~ mileage, data=car_350_train, k=15)
+car_350_test = car_350_test %>%
+  mutate(price_350_pred = predict(knn, car_350_test))
+pred_350_test = ggplot(data = car_350_test) + 
+  geom_point(mapping = aes(x = mileage, y = price), alpha=0.2)
+
+pred_350_test + geom_line(aes(x = mileage, y = price_350_pred), color='red', size=1.5)
+
+```
+For Trim = 65 AGM
+```{r}
+car_65 = sclass %>%
+  filter(trim == '65 AMG')
+summary(car_65)
+# plot the data
+ggplot(data = car_65) + 
+  geom_point(mapping = aes(x = mileage, y = price), color='darkgrey')
+# split
+car_65_split = initial_split(car_65, prop=0.8)
+car_65_train = training(car_65_split)
+car_65_test  = testing(car_65_split)
+k_grid = c(2, 4, 6, 8, 10, 15, 20, 25, 30, 35, 40, 45,
+           50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300)
+rmse_out = foreach(i=1:20, .combine='rbind') %dopar% {
+  
+  this_rmse = foreach(k = k_grid, .combine='c') %do% {
+
+    knn_model = knnreg(price ~ mileage, data=car_65_train, k = k, use.all=TRUE)
+    modelr::rmse(knn_model, car_65_test)
+  }
+  data.frame(k=k_grid, rmse=this_rmse)
+}
+rmse_out = arrange(rmse_out, k)
+ggplot(rmse_out) + geom_point(aes(x=factor(k), y=rmse)) + theme_bw(base_size=7)
+```
+We can see that the bottom is k = 10.
+
+```{r}
+knn = knnreg(price ~ mileage, data=car_65_train, k=10)
+car_65_test = car_65_test %>%
+  mutate(price_65_pred = predict(knn, car_65_test))
+pred_65_test = ggplot(data = car_65_test) + 
+  geom_point(mapping = aes(x = mileage, y = price), alpha=0.2)
+
+pred_65_test + geom_line(aes(x = mileage, y = price_65_pred), color='red', size=1.5)
+```
+
+
+
+
